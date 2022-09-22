@@ -9,7 +9,9 @@ Rachel Lai (rml267)
 
 ## Team Members:
 Nhi Nguyen (npn25)
+
 Zach Kwon (zk49)
+
 Brooke Paykin (bsp67)
 
 ## Semester Goals:
