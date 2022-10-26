@@ -22,3 +22,4 @@ The goal of the Dissolved Organic Matter subteam is to determine the optimal coa
 ## Links to Reports and Presentations
 
 ### Fall 2022
+[Symposium Presentation Recording](https://youtu.be/n4SQE6YDL6c)
