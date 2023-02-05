@@ -12,6 +12,10 @@ Nhi Nguyen (npn25)
 
 Brooke Paykin (bsp67)
 
+## Team Members:
+
+Mateo Aranzazu (ma956)
+
 ## Semester Goals:
 The goal of the Dissolved Organic Matter subteam is to determine the optimal dosages for clay and/or activated carbon to remove humic acid (a form of dissolved organic matter) from influent water with low turbidity. The team is experiments by varying pH levels, clay concentrations, and humic acid concentrations to find optimal dosings in different situations.
 
