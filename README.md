@@ -12,6 +12,8 @@ Nhi Nguyen (npn25)
 
 Brooke Paykin (bsp67)
 
+Henry Lin (hl777)
+
 ## Past Team Members:
 
 Mateo Aranzazu (ma956)
