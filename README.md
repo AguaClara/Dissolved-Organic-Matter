@@ -19,7 +19,7 @@ Henry Lin (hl777)
 Mateo Aranzazu (ma956)
 
 ## Semester Goals:
-The goal of the Dissolved Organic Matter subteam is to determine the optimal dosages for clay and/or activated carbon to remove humic acid (a form of dissolved organic matter) from influent water with low turbidity. The team is experiments by varying pH levels, clay concentrations, and humic acid concentrations to find optimal dosings in different situations.
+The goal of the Dissolved Organic Matter subteam is to determine the optimal dosages for clay and/or activated carbon to remove humic acid (a form of dissolved organic matter) from influent water with low turbidity. The team performs experiments by varying clay and/or activated carbon mass flow rates with ProCoDA to determine optimal dosages for each and test which is the better alternative for removing DOM from drinking water.
 
 ## Links to Reports and Presentations
 
