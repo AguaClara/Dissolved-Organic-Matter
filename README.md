@@ -1,5 +1,5 @@
 # Dissolved Organic Matter
-Welcome to the Dissolved Organic Matter Team!
+Welcome to the Github for the AguaClara Cornell Dissolved Organic Matter Team!
 
 ## Research Advisor:
 Rachel Lai (rml267)
