@@ -2,15 +2,15 @@
 Welcome to the Github page for the AguaClara Cornell Dissolved Organic Matter Team!
 
 ## Research Advisor:
-Rachel Lai (rml267)
+Brooke Paykin (bsp67)
 
 ## Subteam Lead: 
 Zachary Kwon (zk49)
 
 ## Team Members:
-Nhi Nguyen (npn25)
+Rachel Lai (rml267)
 
-Brooke Paykin (bsp67)
+Nhi Nguyen (npn25)
 
 Henry Lin (hl777)
 
