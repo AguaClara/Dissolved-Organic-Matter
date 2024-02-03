@@ -2,18 +2,15 @@
 Welcome to the Github page for the AguaClara Cornell Dissolved Organic Matter Team!
 
 ## Research Advisor:
-Brooke Paykin (bsp67)
+Zachary Kwon (zk49)
 
 ## Subteam Lead: 
-Zachary Kwon (zk49)
+Henry Lin (hl777)
 
 ## Team Members:
 Rachel Lai (rml267)
 
-Henry Lin (hl777)
-
-Nhi Nguyen (npn25)
-
+Johan DeMessie (jd2294)
 
 ## Semester Goals:
 The goal of the Dissolved Organic Matter subteam is to determine the optimal dosages for clay and/or activated carbon to remove humic acid (a form of dissolved organic matter) from influent water with low turbidity. The team performs experiments by varying clay and/or activated carbon mass flow rates with ProCoDA to determine optimal dosages for each and test which is the better alternative for removing DOM from drinking water.
