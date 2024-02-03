@@ -19,7 +19,13 @@ The goal of the Dissolved Organic Matter subteam is to determine the optimal dos
 
 ### Fall 2023
 
+[Symposium Presentation Slides](https://github.com/AguaClara/Dissolved-Organic-Matter/blob/main/Fall%202023/2023FA%20Mid-Semester%20DOM%20Symposium%20Slides.pptx) 
+
 [Mid-Semester Report](https://github.com/AguaClara/Dissolved-Organic-Matter/blob/main/Fall%202023/2023FA%20DOM%20Mid-Semester%20Report.pdf)
+
+[Poster Presentation](https://github.com/AguaClara/Dissolved-Organic-Matter/blob/main/Fall%202023/DOM%20Poster.pdf)
+
+[Final Report](https://github.com/AguaClara/Dissolved-Organic-Matter/blob/main/Fall%202023/2023FA%20DOM%20Final%20Report.pdf) 
 
 ### Spring 2023
 
