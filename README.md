@@ -2,22 +2,19 @@
 Welcome to the Github page for the AguaClara Cornell Dissolved Organic Matter Team!
 
 ## Research Advisor:
-Zachary Kwon (zk49)
+Zach Marshall <zdm6@cornell.edu>
 
 ## Subteam Lead: 
-Henry Lin (hl777)
+Johan DeMessie <jd2294@cornell.edu>
 
 ## Team Members:
-Rachel Lai (rml267)
-
-Johan DeMessie (jd2294)
-
-Ryan Moradei (rtm83)
-
-Noyonima Masud (nsm89)
+Noyonima Masud <nsm89@cornell.edu>
+Sarvesh Prabhu <sp2572@cornell.edu>
+Chloe Tseng <ct685@cornell.edu>
 
 ## Semester Goals:
-The goal of the Dissolved Organic Matter subteam is to determine the optimal dosages for clay and/or activated carbon to remove humic acid (a form of dissolved organic matter) from influent water with low turbidity. The team performs experiments by varying clay and/or activated carbon mass flow rates with ProCoDA to determine optimal dosages for each and test which is the better alternative for removing DOM from drinking water.
+The goal of the Dissolved Organic Matter subteam is to develop treatment methods, build & prototype sensors, and mathematically model treatment dynamics for optimizing dissolved organic matter removal. The key treatment methods we are looking into are comparing the performance of Clay, Activated Carbon, and/or Bio-Adsorbent pretreatment stages to be used before the addition of Poly Aluminum Chloride (PACl) Coagulant to remove humic acid (a form of dissolved organic matter) from drinking water. The team conducts central composite design tests on dozens of different combinations to Clay/Activated Carbon/Bio-Adsorbent, PACL, and Humic Acid concentrations to better understand the relationship between all three reactants. By building Conductivity and Dielectric spectroscopy sensors we can extract data from our system and improve our understanding of DOM removal. Ultimately, this lets us build mathematical models of DOM treatment dynamics that in conjunction with Computational Fluid Dynamics Simulations let us simulate the implementation of different combinations of all 3 reactants and model treatment efficiency and costs on a larger system scale- simulating the performance of treatment methods in developing countries and help tailor AguaClara's implemented treatment methods to each communities needs.
+
 
 ## Reports and Presentations
 
