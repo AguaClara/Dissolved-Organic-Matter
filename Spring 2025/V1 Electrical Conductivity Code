@@ -1,0 +1,143 @@
+// Constants for Mesh and System Parameters
+const float electrode_distance = 0.0635;
+const float mesh_width = 0.0635;
+const float mesh_height = 0.0635;
+const float grid_spacing = 0.00635;
+const float wire_thickness = 0.0005;
+const float beta = 0.01;
+const float n = 1.2;
+const float analog_ref_voltage = 5.0;
+const int analog_resolution = 1023;
+
+// Electrical Impedance Spectroscopy Constants
+const int R1 = 1000;
+const int EC_READ_PIN = A0;
+const int EC_POWER_PIN = A1;
+const int TEMP_PIN = A5;
+const float TEMP_COEF = 0.019;
+const float VIN = 5.0;
+const int SAMPLES_PER_FREQ = 50; // Increased for better accuracy
+const int SETTLING_TIME_US = 500;
+const unsigned long MIN_FREQ = 0; // Start from 0 Hz
+const unsigned long MAX_FREQ = 100000;
+const int FREQ_POINTS = 100; // Increased for finer resolution
+const int KASAMI_LENGTH = 63;
+int kasamiSequence[KASAMI_LENGTH];
+float readings[SAMPLES_PER_FREQ];
+unsigned long measurementDelay;
+
+void setup() {
+    Serial.begin(115200);
+    pinMode(EC_READ_PIN, INPUT);
+    pinMode(EC_POWER_PIN, OUTPUT);
+    generateOptimizedKasami();
+    Serial.println("Frequency(Hz),Conductivity(mS/cm),Phase(deg),Noise_Level");
+}
+
+void loop() {
+    for (int i = 0; i < FREQ_POINTS; i++) {
+        float freq = MIN_FREQ + i * (MAX_FREQ / (FREQ_POINTS - 1)); // Uniform spacing including 0 Hz
+        measureFrequencyPoint(freq);
+        delay(50);
+    }
+    Serial.println("Measurement complete");
+    while(1);
+}
+
+void measureFrequencyPoint(float frequency) {
+    unsigned long periodUs = (frequency > 0) ? 1000000 / frequency : 1000000;
+    measurementDelay = max(periodUs / 4, (unsigned long)SETTLING_TIME_US);
+    float temperature = getTemperature();
+
+    for (int i = 0; i < SAMPLES_PER_FREQ; i++) {
+        float reading = 0;
+        for (int k = 0; k < KASAMI_LENGTH; k++) {
+            digitalWrite(EC_POWER_PIN, kasamiSequence[k]);
+            delayMicroseconds(measurementDelay);
+            int raw = analogRead(EC_READ_PIN);
+            reading += kasamiSequence[k] ? raw : -raw;
+        }
+        reading /= KASAMI_LENGTH;
+        readings[i] = reading;
+    }
+
+    float medianReading = getMedian(readings, SAMPLES_PER_FREQ);
+    float voltage = (medianReading * VIN) / 1024.0;
+    float resistance = (voltage * R1) / (VIN - voltage);
+    float conductivity = (resistance > 0) ? (1000.0 / (resistance * 1.89)) : 0;
+    float conductivity25 = conductivity / (1 + TEMP_COEF * (temperature - 25.0));
+    float noise_level = calculateNoiseLevel(readings, SAMPLES_PER_FREQ);
+    float phase = calculatePhase(readings, SAMPLES_PER_FREQ);
+    float corrected_conductivity = computeCorrectedConductivity(conductivity);
+
+    Serial.print(frequency, 1);
+    Serial.print(",");
+    Serial.print(corrected_conductivity, 6);
+    Serial.print(",");
+    Serial.print(phase, 2);
+    Serial.print(",");
+    Serial.println(noise_level, 4);
+}
+
+float computeCorrectedConductivity(float sigma_0) {
+    float phi = pow((grid_spacing - wire_thickness) / grid_spacing, 2);
+    float E_eff = (VIN / electrode_distance) * (1 + beta * pow(VIN / electrode_distance, n));
+    return sigma_0 * (1 + beta * pow(VIN / electrode_distance, n));
+}
+
+void generateOptimizedKasami() {
+    uint8_t lfsr = 0x01;
+    for(int i = 0; i < KASAMI_LENGTH; i++) {
+        kasamiSequence[i] = lfsr & 0x01;
+        uint8_t bit = ((lfsr >> 5) ^ (lfsr >> 0)) & 1;
+        lfsr = (lfsr >> 1) | (bit << 5);
+    }
+}
+
+float getMedian(float arr[], int n) {
+    for(int i = 0; i < n-1; i++) {
+        for(int j = 0; j < n-i-1; j++) {
+            if(arr[j] > arr[j+1]) {
+                float temp = arr[j];
+                arr[j] = arr[j+1];
+                arr[j+1] = temp;
+            }
+        }
+    }
+    return (n % 2 == 0) ? (arr[n/2] + arr[n/2-1]) / 2 : arr[n/2];
+}
+
+float calculateNoiseLevel(float readings[], int n) {
+    float sum = 0, sumsq = 0;
+    for(int i = 0; i < n; i++) {
+        sum += readings[i];
+        sumsq += readings[i] * readings[i];
+    }
+    float mean = sum / n;
+    return sqrt((sumsq / n) - (mean * mean));
+}
+
+float calculatePhase(float readings[], int n) {
+    float sum = 0;
+    int crossings = 0;
+    for(int i = 1; i < n; i++) {
+        if((readings[i-1] < 0) && (readings[i] >= 0)) {
+            sum += i;
+            crossings++;
+        }
+    }
+    return (crossings > 0) ? 360.0 * (sum / crossings / n) : 0;
+}
+
+float getTemperature() {
+    const int TEMP_SAMPLES = 10;
+    float sum = 0;
+    for(int i = 0; i < TEMP_SAMPLES; i++) {
+        int val = analogRead(TEMP_PIN);
+        float temp = log(((10240000.0 / val) - 10000.0));
+        temp = 1 / (0.001129148 + (0.000234125 + (0.0000000876741 * temp * temp)) * temp);
+        sum += temp - 273.15;
+        delay(10);
+    }
+    return sum / TEMP_SAMPLES;
+}
