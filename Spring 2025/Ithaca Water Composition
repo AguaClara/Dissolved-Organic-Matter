@@ -1,0 +1,638 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize, differential_evolution
+from scipy.signal import savgol_filter
+from scipy.interpolate import CubicSpline
+import pandas as pd
+
+# Function to load and process data
+def load_data(frequencies, conductivities, snr_values=None):
+    """
+    Load and preprocess the conductivity and SNR data
+    
+    Parameters:
+    frequencies -- array of frequency values in Hz
+    conductivities -- array of conductivity measurements
+    snr_values -- array of signal-to-noise ratio values for each frequency (optional)
+    
+    Returns:
+    processed dataframe with frequencies, conductivities, and SNR values
+    """
+    # Convert to numpy arrays if they aren't already
+    freq = np.array(frequencies)
+    cond = np.array(conductivities)
+    
+    # Apply Savitzky-Golay filter to smooth conductivity data
+    # Adjust window_length based on data density
+    window_length = min(15, len(freq) - (len(freq) % 2) - 1)
+    if window_length < 3:
+        window_length = 3
+    polyorder = min(3, window_length - 1)
+    
+    cond_smooth = savgol_filter(cond, window_length=window_length, polyorder=polyorder)
+    
+    # If SNR values are not provided, estimate them
+    if snr_values is None:
+        # Calculate local variance as a measure of noise
+        variance = np.zeros_like(cond)
+        for i in range(len(cond)):
+            start_idx = max(0, i - 5)
+            end_idx = min(len(cond), i + 6)
+            variance[i] = np.var(cond[start_idx:end_idx])
+        
+        # Avoid division by zero
+        variance = np.maximum(variance, 1e-10)
+        snr = cond_smooth / np.sqrt(variance)
+        
+        # Normalize SNR values
+        snr = (snr - np.min(snr)) / (np.max(snr) - np.min(snr) + 1e-10) * 10 + 1
+    else:
+        snr = np.array(snr_values)
+    
+    # Calculate first and second derivatives for feature detection
+    # Use cubic spline for smoother derivatives
+    cs = CubicSpline(freq, cond_smooth)
+    freq_dense = np.linspace(freq.min(), freq.max(), len(freq) * 5)
+    cond_dense = cs(freq_dense)
+    
+    # First derivative
+    d_cond_df = cs(freq_dense, 1)
+    
+    # Second derivative
+    d2_cond_df2 = cs(freq_dense, 2)
+    
+    return {
+        'freq': freq, 
+        'cond': cond, 
+        'cond_smooth': cond_smooth, 
+        'snr': snr,
+        'freq_dense': freq_dense,
+        'cond_dense': cond_dense,
+        'd_cond_df': d_cond_df,
+        'd2_cond_df2': d2_cond_df2
+    }
+
+# Define improved ion characteristic profiles based on physical principles
+def ion_profile(freq, ion_params):
+    """
+    Generate more realistic conductivity profile for specific ions
+    
+    Parameters:
+    freq -- frequency array
+    ion_params -- dictionary with parameters for ion model
+    
+    Returns:
+    conductivity profile for the specified ion
+    """
+    # Extract parameters for the ion model
+    center_freq = ion_params['center_freq']
+    width = ion_params['width']
+    asymmetry = ion_params.get('asymmetry', 0)
+    cutoff_low = ion_params.get('cutoff_low', 0)
+    cutoff_high = ion_params.get('cutoff_high', np.inf)
+    
+    # Calculate normalized frequency
+    x = (freq - center_freq) / width
+    
+    # Apply asymmetry (positive values skew right, negative skew left)
+    if asymmetry != 0:
+        x = x - asymmetry * x**2
+    
+    # Generate profile with modified Lorentzian shape for better peak modeling
+    profile = 1 / (1 + x**2)
+    
+    # Apply frequency cutoffs
+    mask = (freq >= cutoff_low) & (freq <= cutoff_high)
+    profile = profile * mask
+    
+    # Normalize to have max value of 1.0
+    if np.max(profile) > 0:
+        profile = profile / np.max(profile)
+    
+    return profile
+
+# Create more specific ion profile parameter sets
+def get_ion_parameters():
+    """
+    Define parameters for various ions found in tap water
+    
+    Returns:
+    Dictionary of ion parameters for modeling
+    """
+    return {
+        'calcium': {
+            'center_freq': 5000,    # Ca²⁺ responds at lower frequencies
+            'width': 7000,
+            'asymmetry': 0.3,       # Asymmetric peak shape
+            'cutoff_high': 25000
+        },
+        'magnesium': {
+            'center_freq': 12000,   # Mg²⁺ slightly higher frequency than Ca²⁺
+            'width': 6000,
+            'asymmetry': 0.1,
+            'cutoff_high': 35000
+        },
+        'sodium': {
+            'center_freq': 30000,   # Na⁺ responds in mid frequencies
+            'width': 15000,
+            'cutoff_low': 10000,
+            'cutoff_high': 60000
+        },
+        'potassium': {
+            'center_freq': 25000,   # K⁺ similar to Na⁺ but slightly different
+            'width': 12000,
+            'cutoff_low': 8000,
+            'cutoff_high': 50000
+        },
+        'chloride': {
+            'center_freq': 40000,   # Cl⁻ anion
+            'width': 18000,
+            'asymmetry': -0.1,
+            'cutoff_low': 20000,
+            'cutoff_high': 75000
+        },
+        'bicarbonate': {
+            'center_freq': 15000,   # HCO₃⁻ larger anion
+            'width': 10000,
+            'asymmetry': 0.2,
+            'cutoff_high': 45000
+        },
+        'sulfate': {
+            'center_freq': 10000,   # SO₄²⁻ large divalent anion
+            'width': 8000,
+            'asymmetry': 0.25,
+            'cutoff_high': 30000
+        },
+        'nitrate': {
+            'center_freq': 35000,   # NO₃⁻ mobile anion
+            'width': 15000,
+            'cutoff_low': 15000,
+            'cutoff_high': 65000
+        },
+        'fluoride': {
+            'center_freq': 60000,   # F⁻ small highly mobile anion
+            'width': 20000,
+            'cutoff_low': 40000
+        },
+        'iron': {
+            'center_freq': 8000,    # Fe²⁺/Fe³⁺ transition metals
+            'width': 5000,
+            'cutoff_high': 20000
+        },
+        'high_freq_response': {     # For any very high frequency responses
+            'center_freq': 80000,
+            'width': 25000,
+            'cutoff_low': 65000
+        }
+    }
+
+# Identify potential features in the data to guide parameter optimization
+def identify_features(data):
+    """
+    Analyze the conductivity spectrum to identify potential features
+    that could correspond to specific ions
+    
+    Parameters:
+    data -- dictionary with processed data
+    
+    Returns:
+    list of potential features with their frequency locations
+    """
+    # Extract derivatives from data
+    freq_dense = data['freq_dense']
+    d_cond_df = data['d_cond_df']
+    d2_cond_df2 = data['d2_cond_df2']
+    
+    # Find inflection points (where second derivative crosses zero)
+    inflection_indices = []
+    for i in range(1, len(d2_cond_df2)):
+        if d2_cond_df2[i-1] * d2_cond_df2[i] <= 0:
+            inflection_indices.append(i)
+    
+    # Find potential peaks (maxima in conductivity)
+    peak_indices = []
+    for i in range(1, len(d_cond_df) - 1):
+        if d_cond_df[i-1] > 0 and d_cond_df[i+1] < 0:
+            peak_indices.append(i)
+    
+    # Find significant changes in slope
+    slope_change_indices = []
+    d2_abs = np.abs(d2_cond_df2)
+    threshold = np.percentile(d2_abs, 90)  # Top 10% of slope changes
+    for i in range(len(d2_abs)):
+        if d2_abs[i] > threshold:
+            slope_change_indices.append(i)
+    
+    # Compile features
+    features = []
+    
+    for idx in peak_indices:
+        features.append({
+            'type': 'peak',
+            'freq': freq_dense[idx],
+            'intensity': d2_abs[idx]
+        })
+    
+    for idx in inflection_indices:
+        features.append({
+            'type': 'inflection',
+            'freq': freq_dense[idx],
+            'intensity': d2_abs[idx]
+        })
+    
+    for idx in slope_change_indices:
+        features.append({
+            'type': 'slope_change',
+            'freq': freq_dense[idx],
+            'intensity': d2_abs[idx]
+        })
+    
+    # Sort by frequency
+    features.sort(key=lambda x: x['freq'])
+    
+    return features
+
+# Use identified features to adjust ion parameters
+def adjust_ion_parameters(ion_params, features):
+    """
+    Adjust ion parameters based on identified features in the data
+    
+    Parameters:
+    ion_params -- dictionary of initial ion parameters
+    features -- list of identified features in the data
+    
+    Returns:
+    dictionary of adjusted ion parameters
+    """
+    adjusted_params = ion_params.copy()
+    
+    # Extract frequencies where peaks, inflections, and slope changes occur
+    feature_freqs = [f['freq'] for f in features]
+    
+    # Only make adjustments if we have enough features
+    if len(feature_freqs) > 3:
+        # Group feature frequencies into clusters
+        clusters = []
+        current_cluster = [feature_freqs[0]]
+        
+        for i in range(1, len(feature_freqs)):
+            if feature_freqs[i] - feature_freqs[i-1] < 5000:  # If features are close
+                current_cluster.append(feature_freqs[i])
+            else:
+                clusters.append(current_cluster)
+                current_cluster = [feature_freqs[i]]
+        
+        if current_cluster:
+            clusters.append(current_cluster)
+        
+        # Calculate mean frequency for each cluster
+        cluster_centers = [np.mean(cluster) for cluster in clusters]
+        
+        # Match clusters to ions based on proximity
+        for ion, params in adjusted_params.items():
+            center_freq = params['center_freq']
+            
+            # Find closest cluster
+            distances = [abs(center_freq - cc) for cc in cluster_centers]
+            if distances:
+                min_dist_idx = np.argmin(distances)
+                min_dist = distances[min_dist_idx]
+                
+                # Only adjust if reasonably close
+                if min_dist < 20000:
+                    # Adjust center frequency to move toward cluster center
+                    adjusted_params[ion]['center_freq'] = (
+                        0.7 * adjusted_params[ion]['center_freq'] + 
+                        0.3 * cluster_centers[min_dist_idx]
+                    )
+    
+    return adjusted_params
+
+# Enhanced deconvolution using advanced optimization
+def deconvolute_spectrum(data, ion_params):
+    """
+    Deconvolute the conductivity spectrum into contributions from different ions
+    using advanced optimization techniques
+    
+    Parameters:
+    data -- dictionary containing frequency and conductivity data
+    ion_params -- dictionary of parameters for each ion
+    
+    Returns:
+    dictionary with concentration coefficients and model fit
+    """
+    freq = data['freq']
+    cond_measured = data['cond_smooth']
+    snr = data['snr']
+    
+    # Generate reference profiles for each ion
+    ion_profiles = {}
+    for ion, params in ion_params.items():
+        ion_profiles[ion] = ion_profile(freq, params)
+    
+    ions = list(ion_params.keys())
+    
+    # Create weights for optimization (SNR-based weighting)
+    weights = np.sqrt(snr)
+    
+    # Prepare matrix for fast computation
+    A = np.zeros((len(freq), len(ions) + 1))
+    for i, ion in enumerate(ions):
+        A[:, i] = ion_profiles[ion]
+    A[:, -1] = 1.0  # Baseline term
+    
+    # Weighted least squares with non-negative constraints
+    weighted_A = A * weights[:, np.newaxis]
+    weighted_b = cond_measured * weights
+    
+    # Function to minimize
+    def objective(coefficients):
+        model = np.zeros_like(freq, dtype=float)
+        for i, ion in enumerate(ions):
+            model += coefficients[i] * ion_profiles[ion]
+        model += coefficients[-1]  # Baseline
+        
+        residuals = (cond_measured - model) * weights
+        return np.sum(residuals**2)
+    
+    
+   # Use differential evolution for global optimization
+    bounds = [(0, 1000) for _ in range(len(ions) + 1)] #Changed to finite bounds
+    
+    # Two-stage optimization: global search then local refinement
+    result_global = differential_evolution(
+        objective, 
+        bounds, 
+        popsize=20, 
+        mutation=(0.5, 1.0), 
+        strategy='best1bin',
+        maxiter=100
+    )
+    
+    # Use global result as starting point for local optimization
+    result_local = minimize(
+        objective, 
+        result_global.x, 
+        bounds=bounds, 
+        method='L-BFGS-B',
+        options={'ftol': 1e-10, 'gtol': 1e-10, 'maxiter': 1000}
+    )
+    
+    # Use the best result
+    if result_local.fun < result_global.fun:
+        coefficients = result_local.x
+        result = result_local
+    else:
+        coefficients = result_global.x
+        result = result_global
+    
+    # Generate model with optimized coefficients
+    model = np.zeros_like(freq, dtype=float)
+    ion_contributions = {}
+    
+    for i, ion in enumerate(ions):
+        contribution = coefficients[i] * ion_profiles[ion]
+        ion_contributions[ion] = contribution
+        model += contribution
+    
+    # Add baseline
+    baseline = coefficients[-1]
+    model += baseline
+    
+    # Calculate R-squared to measure goodness of fit
+    ss_total = np.sum((cond_measured - np.mean(cond_measured))**2)
+    ss_residual = np.sum((cond_measured - model)**2)
+    r_squared = 1 - (ss_residual / ss_total)
+    
+    return {
+        'coefficients': {ion: coefficients[i] for i, ion in enumerate(ions)},
+        'baseline': baseline,
+        'model': model,
+        'ion_contributions': ion_contributions,
+        'optimization_result': result,
+        'r_squared': r_squared,
+        'mse': np.mean((cond_measured - model)**2)
+    }
+
+# Calculate concentrations from deconvolution results
+def calculate_concentrations(deconv_results, calibration_factors=None):
+    """
+    Convert deconvolution coefficients to actual concentrations
+    
+    Parameters:
+    deconv_results -- output from deconvolute_spectrum function
+    calibration_factors -- dictionary mapping ions to calibration factors (optional)
+    
+    Returns:
+    dictionary of ion concentrations in mg/L
+    """
+    concentrations = {}
+    coefficients = deconv_results['coefficients']
+    
+    # If no calibration factors provided, use relative contributions
+    if calibration_factors is None:
+        # Normalize coefficients to sum to 100%
+        total = sum(coefficients.values())
+        
+        if total > 0:
+            for ion, coefficient in coefficients.items():
+                # Express as percentage of total contribution
+                concentrations[ion] = (coefficient / total) * 100
+        else:
+            for ion in coefficients:
+                concentrations[ion] = 0.0
+                
+        # Indicate these are relative values, not absolute concentrations
+        note = "Note: Values represent relative contributions (%) as no calibration factors were provided."
+    else:
+        # Use provided calibration factors
+        for ion, coefficient in coefficients.items():
+            if ion in calibration_factors:
+                concentrations[ion] = coefficient * calibration_factors[ion]
+            else:
+                # Use average calibration factor if specific one not available
+                avg_factor = np.mean(list(calibration_factors.values()))
+                concentrations[ion] = coefficient * avg_factor
+        
+        note = "Values represent estimated concentrations in mg/L based on calibration factors."
+    
+    return concentrations, note
+
+# Enhanced visualization function
+def plot_deconvolution(data, deconv_results, ion_params, title=None):
+    """
+    Plot the original spectrum, fitted model, and individual ion contributions
+    with enhanced visualization
+    """
+    freq = data['freq']
+    cond_original = data['cond']
+    cond_smooth = data['cond_smooth']
+    model = deconv_results['model']
+    ion_contributions = deconv_results['ion_contributions']
+    r_squared = deconv_results['r_squared']
+    
+    # Set up a larger figure with 3 subplots
+    plt.figure(figsize=(14, 12))
+    
+    # 1. Original data and model fit
+    plt.subplot(3, 1, 1)
+    plt.plot(freq/1000, cond_original, 'o', alpha=0.4, label='Original Data', color='gray')
+    plt.plot(freq/1000, cond_smooth, '-', color='blue', linewidth=2, label='Smoothed Data')
+    plt.plot(freq/1000, model, '-', color='red', linewidth=2, label='Model Fit')
+    plt.xlabel('Frequency (kHz)')
+    plt.ylabel('Conductivity')
+    plt.legend()
+    if title:
+        plt.title(f"{title} - Model Fit (R² = {r_squared:.4f})")
+    else:
+        plt.title(f"Conductivity Spectrum and Model Fit (R² = {r_squared:.4f})")
+    
+    # 2. Residuals
+    plt.subplot(3, 1, 2)
+    residuals = cond_smooth - model
+    plt.plot(freq/1000, residuals, 'o-', color='purple')
+    plt.axhline(y=0, color='black', linestyle='--')
+    plt.xlabel('Frequency (kHz)')
+    plt.ylabel('Residuals')
+    plt.title('Fit Residuals (Observed - Predicted)')
+    
+    # 3. Individual ion contributions - use a pleasing color palette
+    plt.subplot(3, 1, 3)
+    
+    # Sort ions by their total contribution (area under curve)
+    ion_areas = {ion: np.sum(contrib) for ion, contrib in ion_contributions.items()}
+    sorted_ions = sorted(ion_areas.keys(), key=lambda x: ion_areas[x], reverse=True)
+    
+    # Use a color palette
+    colors = plt.cm.tab10.colors + plt.cm.Set2.colors
+    
+    # Plot contributions
+    for i, ion in enumerate(sorted_ions):
+        color_idx = i % len(colors)
+        plt.plot(freq/1000, ion_contributions[ion], '-', 
+                 label=f'{ion} ({deconv_results["coefficients"][ion]:.3f})',
+                 color=colors[color_idx])
+    
+    plt.axhline(y=deconv_results['baseline'], color='gray', linestyle='--', 
+                label=f'Baseline ({deconv_results["baseline"]:.3f})')
+    plt.xlabel('Frequency (kHz)')
+    plt.ylabel('Conductivity Contribution')
+    plt.legend(loc='upper right', fontsize=9)
+    plt.title('Deconvoluted Ion Contributions')
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Additional plot: stacked area chart of contributions
+    plt.figure(figsize=(12, 6))
+    
+    # Prepare data for stacking
+    y_stack = np.zeros_like(freq, dtype=float)
+    # Add baseline first
+    y_stack += deconv_results['baseline']
+    
+    # Stack ion contributions in order of magnitude
+    for ion in sorted_ions:
+        plt.fill_between(freq/1000, y_stack, y_stack + ion_contributions[ion], 
+                         label=ion, alpha=0.7)
+        y_stack += ion_contributions[ion]
+    
+    # Plot original data and model for reference
+    plt.plot(freq/1000, cond_smooth, 'k--', linewidth=2, label='Observed')
+    
+    plt.xlabel('Frequency (kHz)')
+    plt.ylabel('Conductivity')
+    plt.title('Stacked Ion Contributions to Total Conductivity')
+    plt.legend(loc='upper right')
+    plt.tight_layout()
+    plt.show()
+
+# Main function to run the analysis
+def analyze_water_composition(frequencies, conductivities, snr_values=None, calibration_factors=None):
+    """
+    Main function to analyze water composition from conductivity spectra
+    
+    Parameters:
+    frequencies -- array of frequency values
+    conductivities -- array of conductivity measurements
+    snr_values -- array of signal-to-noise ratio values (optional)
+    calibration_factors -- dictionary of calibration factors for each ion (optional)
+    
+    Returns:
+    dict with ion concentrations and analysis results
+    """
+    # Load and process data
+    data = load_data(frequencies, conductivities, snr_values)
+    
+    # Identify features in the data
+    features = identify_features(data)
+    
+    # Get initial ion parameters
+    ion_params = get_ion_parameters()
+    
+    # Adjust parameters based on features
+    ion_params = adjust_ion_parameters(ion_params, features)
+    
+    # Perform deconvolution
+    deconv_results = deconvolute_spectrum(data, ion_params)
+    
+    # Calculate ion concentrations
+    concentrations, note = calculate_concentrations(deconv_results, calibration_factors)
+    
+    # Filter out ions with negligible contribution
+    significant_ions = {}
+    total_contribution = sum(deconv_results['coefficients'].values())
+    
+    if total_contribution > 0:
+        for ion, coeff in deconv_results['coefficients'].items():
+            # Keep ions that contribute at least 1% to the total
+            if coeff / total_contribution > 0.01:
+                significant_ions[ion] = coeff
+    
+    print(f"Model fit R² = {deconv_results['r_squared']:.4f}")
+    print(f"Mean Squared Error = {deconv_results['mse']:.6f}")
+    
+    # Print results
+    print("\nEstimated Ion Contributions:")
+    for ion, conc in concentrations.items():
+        if ion in significant_ions:
+            print(f"{ion.capitalize()}: {conc:.2f}")
+    
+    print(f"\n{note}")
+    
+    # Visualize results
+    plot_deconvolution(data, deconv_results, ion_params, "Ithaca Tap Water Analysis")
+    
+    return {
+        'data': data,
+        'features': features,
+        'ion_params': ion_params,
+        'deconvolution': deconv_results,
+        'concentrations': concentrations,
+        'significant_ions': significant_ions
+    }
+
+if __name__ == "__main__":
+    # Input frequencies Tested
+    frequencies = [0, 1010, 2020, 3030, 4040, 5050, 6060, 7070, 8080, 9090, 10100, 11110, 12120, 13130, 14140, 15150, 
+                  16160, 17170, 18180, 19190, 20200, 21210, 22220, 23230, 24240, 25250, 26260, 27270, 28280, 29290, 
+                  30300, 31310, 32320, 33330, 34340, 35350, 36360, 37370, 38380, 39390, 40400, 41410, 42420, 43430, 
+                  44440, 45450, 46460, 47470, 48480, 49490, 50500, 51510, 52520, 53530, 54540, 55550, 56560, 57570, 
+                  58580, 59590, 60600, 61610, 62620, 63630, 64640, 65650, 66660, 67670, 68680, 69690, 70700, 71710, 
+                  72720, 73730, 74740, 75750, 76760, 77770, 78780, 79790, 80800, 81810, 82820, 83830, 84840, 85850, 
+                  86860, 87870, 88880, 89890, 90900, 91910, 92920, 93930, 94940, 95950, 96960, 97970, 98980, 99990]
+
+    # Input conductivity data
+    conductivities = [4.87973, 4.31508, 4.263565, 4.12712, 4.247609, 4.154679, 4.065804, 4.225016, 3.970905, 4.05313, 
+                     3.871176, 4.193284, 4.087161, 4.061361, 4.223841, 4.667403, 4.769161, 4.537172, 4.422347, 3.952098, 
+                     3.945097, 3.920283, 3.772433, 3.558742, 3.58328, 3.41038, 3.225181, 3.197601, 3.259706, 3.209871, 
+                     3.322985, 3.186975, 3.273234, 3.218771, 3.121353, 3.17146, 3.153266, 2.935513, 3.074235, 3.063407, 
+                     2.971174, 2.964406, 2.988494, 3.062659, 3.009916, 3.144721, 3.008975, 3.007201, 3.080261, 3.087815, 
+                     3.103761, 3.034391, 3.030277, 3.049544, 3.027222, 3.18258, 3.119708, 3.222203, 3.181117, 3.217742, 
+                     3.352898, 2.976212, 3.059346, 3.190474, 3.208845, 3.132015, 3.116641, 3.15271, 3.316785, 3.392134, 
+                     3.393854, 1.672074, 1.610981, 1.599528, 1.592794, 1.58737, 1.582455, 1.574867, 1.568774, 1.566295, 
+                     1.563578, 1.561543, 1.560091, 1.558109, 1.556082, 1.554587, 1.553382, 1.55213, 1.550688, 1.54939, 
+                     1.548093, 1.547038, 1.546223, 1.54536, 1.544594, 1.543493, 1.542632, 1.542153, 1.541197, 1.540529]
+    
+    # Run the analysis (no predefined calibration factors)
+    results = analyze_water_composition(frequencies, conductivities)
